@@ -8,140 +8,16 @@ use axum_extra::{TypedHeader, headers};
 use rand::distr::Alphanumeric;
 use rand::{RngExt, rng};
 use rust_embed::RustEmbed;
+use sqlx::ConnectOptions;
 use std::borrow::Cow;
-use std::sync::LazyLock;
+use std::str::FromStr;
 use tokio::sync::OnceCell;
 use tower_http::cors::CorsLayer;
-
-static BASE_URL: LazyLock<Option<String>> = LazyLock::new(|| std::env::var("BASE_URL").ok());
-
-#[derive(RustEmbed)]
-#[folder = "templates/assets/"]
-struct Assets;
-
-#[derive(Debug, Template)]
-#[template(path = "index.html")]
-struct Note {
-    id: String,
-    content: String,
-}
-
-struct NoteContent(String);
-
-impl<S> FromRequest<S> for NoteContent
-where
-    S: Send + Sync,
-{
-    type Rejection = Error;
-
-    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let content_type = req
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-
-        async fn read_multipart<S>(req: Request, state: &S) -> Result<NoteContent, Error>
-        where
-            S: Send + Sync,
-        {
-            let mut multipart = Multipart::from_request(req, state)
-                .await
-                .map_err(|_| Error::BadRequest("Invalid multipart body".into()))?;
-
-            let mut result = String::new();
-
-            while let Some(field) = multipart
-                .next_field()
-                .await
-                .map_err(|_| Error::BadRequest("Invalid multipart field".into()))?
-            {
-                let text = field
-                    .text()
-                    .await
-                    .map_err(|_| Error::BadRequest("Invalid multipart data".into()))?;
-
-                if !result.is_empty() {
-                    result.push('\n');
-                }
-
-                result.push_str(&text);
-            }
-
-            Ok(NoteContent(result))
-        }
-
-        async fn read_body<S>(req: Request, state: &S) -> Result<NoteContent, Error>
-        where
-            S: Send + Sync,
-        {
-            let bytes = Bytes::from_request(req, state)
-                .await
-                .map_err(|_| Error::BadRequest("Failed to read body".into()))?;
-
-            let (text, _, malformed) = encoding_rs::UTF_8.decode(&bytes);
-            if !malformed {
-                return Ok(NoteContent(text.into_owned()));
-            }
-
-            let (text, _, malformed) = encoding_rs::GBK.decode(&bytes);
-            if !malformed {
-                return Ok(NoteContent(text.into_owned()));
-            }
-
-            if bytes.len() % 2 == 0 {
-                let (text, _, malformed) = encoding_rs::UTF_16LE.decode(&bytes);
-                if !malformed {
-                    return Ok(NoteContent(text.into_owned()));
-                }
-
-                let (text, _, malformed) = encoding_rs::UTF_16BE.decode(&bytes);
-                if !malformed {
-                    return Ok(NoteContent(text.into_owned()));
-                }
-            }
-
-            Err(Error::BadRequest("Unsupported character encoding".into()))
-        }
-
-        if content_type.starts_with("multipart/form-data") {
-            return read_multipart(req, state).await;
-        }
-
-        read_body(req, state).await
-    }
-}
 
 enum Error {
     BadRequest(String),
     Template(askama::Error),
     Sqlx(sqlx::Error),
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            Error::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-
-            Error::Template(e) => {
-                eprintln!("{e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal Server Error".to_string(),
-                )
-            }
-
-            Error::Sqlx(e) => {
-                eprintln!("{e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal Server Error".to_string(),
-                )
-            }
-        };
-
-        (status, message).into_response()
-    }
 }
 
 impl From<askama::Error> for Error {
@@ -154,6 +30,120 @@ impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
         Error::Sqlx(err)
     }
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            Error::BadRequest(msg) => (
+                StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST.to_string() + msg.as_str(),
+            ),
+
+            Error::Template(e) => {
+                log::error!("{e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+                )
+            }
+
+            Error::Sqlx(e) => {
+                log::error!("{e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+                )
+            }
+        };
+
+        (status, message).into_response()
+    }
+}
+
+struct Content(String);
+
+impl<S> FromRequest<S> for Content
+where
+    S: Send + Sync,
+{
+    type Rejection = Error;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let content_type = req
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        if content_type.starts_with("multipart/form-data") {
+            read_multipart(req, state).await
+        } else {
+            read_body(req, state).await
+        }
+    }
+}
+
+async fn read_body<S>(req: Request, state: &S) -> Result<Content, Error>
+where
+    S: Send + Sync,
+{
+    let bytes = Bytes::from_request(req, state)
+        .await
+        .map_err(|_| Error::BadRequest("Failed to read body".into()))?;
+
+    let (text, _, malformed) = encoding_rs::UTF_8.decode(&bytes);
+    if !malformed {
+        return Ok(Content(text.into_owned()));
+    }
+
+    let (text, _, malformed) = encoding_rs::GBK.decode(&bytes);
+    if !malformed {
+        return Ok(Content(text.into_owned()));
+    }
+
+    Err(Error::BadRequest("unsupported character encoding".into()))
+}
+
+async fn read_multipart<S>(req: Request, state: &S) -> Result<Content, Error>
+where
+    S: Send + Sync,
+{
+    let mut multipart = Multipart::from_request(req, state)
+        .await
+        .map_err(|_| Error::BadRequest("invalid multipart body".into()))?;
+
+    let mut result = String::new();
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| Error::BadRequest("invalid multipart field".into()))?
+    {
+        let text = field
+            .text()
+            .await
+            .map_err(|_| Error::BadRequest("invalid multipart data".into()))?;
+
+        if !result.is_empty() {
+            result.push('\n');
+        }
+
+        result.push_str(&text);
+    }
+
+    Ok(Content(result))
+}
+
+#[derive(RustEmbed)]
+#[folder = "templates/note/assets/"]
+struct Assets;
+
+#[derive(Debug, Template)]
+#[template(path = "note/index.html")]
+struct Note {
+    id: String,
+    content: String,
 }
 
 async fn redirect() -> impl IntoResponse {
@@ -188,6 +178,17 @@ async fn raw(Path(id): Path<String>) -> Result<impl IntoResponse, Error> {
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         note.content,
     ))
+}
+
+async fn update_data(
+    Path(id): Path<String>,
+    Content(content): Content,
+) -> Result<impl IntoResponse, Error> {
+    let note = Note { id, content };
+
+    note.write().await?;
+
+    Ok(StatusCode::OK)
 }
 
 async fn assets(Path(file): Path<String>) -> impl IntoResponse {
@@ -226,65 +227,16 @@ async fn favicon() -> impl IntoResponse {
     )
 }
 
-async fn update_data(
-    Path(id): Path<String>,
-    NoteContent(content): NoteContent,
-) -> Result<impl IntoResponse, Error> {
-    let note = Note { id, content };
-
-    note.write().await?;
-
-    Ok(StatusCode::OK)
-}
-
-async fn random_data(
-    uri: Uri,
-    TypedHeader(host): TypedHeader<headers::Host>,
-    referer: Option<TypedHeader<headers::Referer>>,
-    NoteContent(content): NoteContent,
-) -> Result<impl IntoResponse, Error> {
-    let id = rand_string(5);
-    let note = Note {
-        id: id.clone(),
-        content,
-    };
-
-    note.write().await?;
-
-    let base = match BASE_URL.as_deref() {
-        Some(base_url) => base_url.trim_end_matches('/').to_string(),
-        None => referer
-            .map(|TypedHeader(r)| r.to_string().trim_end_matches('/').to_string())
-            .unwrap_or_else(|| {
-                format!(
-                    "{}{}",
-                    host.to_string().trim_end_matches('/'),
-                    uri.path().trim_end_matches('/')
-                )
-            }),
-    };
-
-    Ok((StatusCode::OK, format!("{base}/d/{id}\n")))
-}
-
 async fn fallback(uri: Uri) -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
-        format!("fallback for path {}", uri.path()),
+        format!("fallback for path {}\n", uri.path()),
     )
 }
 
-fn rand_string(n: usize) -> String {
-    rng()
-        .sample_iter(&Alphanumeric)
-        .take(n)
-        .map(char::from)
-        .collect()
-}
-
 impl Note {
-    async fn write(&self) -> Result<(), sqlx::Error> {
-        let pool = pool().await;
+    async fn write(&self) -> Result<(), Error> {
+        let db = db()?;
 
         const QUERY: &str = r#"
             INSERT INTO notes (id, content) VALUES ($1, $2) ON CONFLICT(id) DO
@@ -294,20 +246,20 @@ impl Note {
         sqlx::query(QUERY)
             .bind(&self.id)
             .bind(&self.content)
-            .execute(pool)
+            .execute(db)
             .await?;
 
         Ok(())
     }
 
-    async fn read(id: &str) -> Result<Self, sqlx::Error> {
-        let pool = pool().await;
+    async fn read(id: &str) -> Result<Self, Error> {
+        let db = db()?;
 
         const QUERY: &str = "SELECT content FROM notes WHERE id = $1";
 
         let content = sqlx::query_scalar(QUERY)
             .bind(id)
-            .fetch_optional(pool)
+            .fetch_optional(db)
             .await?
             .unwrap_or_default();
 
@@ -318,66 +270,85 @@ impl Note {
     }
 }
 
-#[cfg(all(feature = "postgres", feature = "sqlite"))]
-compile_error!("Choose only one database backend.");
+pub fn router() -> Router {
+    Router::new()
+        .route("/", get(redirect))
+        .route("/{id}", get(home).post(update_data).put(update_data))
+        .route("/d/{id}", get(raw))
+        .route("/assets/{file}", get(assets))
+        .route("/favicon.ico", get(favicon))
+        .fallback(fallback)
+        .layer(DefaultBodyLimit::max(3 << 20)) // 3 MB
+        .layer(CorsLayer::permissive())
+}
 
-#[cfg(not(any(feature = "postgres", feature = "sqlite")))]
-compile_error!("Choose one database backend.");
+fn rand_string(n: usize) -> String {
+    rng()
+        .sample_iter(&Alphanumeric)
+        .take(n)
+        .map(char::from)
+        .collect()
+}
 
 #[cfg(feature = "postgres")]
-use sqlx::PgPool as DbPool;
+use sqlx::PgPool as Db;
 
 #[cfg(feature = "sqlite")]
-use sqlx::SqlitePool as DbPool;
+use sqlx::SqlitePool as Db;
 
-static POOL: OnceCell<DbPool> = OnceCell::const_new();
+static DB: OnceCell<Db> = OnceCell::const_new();
 
-async fn init_pool() -> DbPool {
-    let pool: DbPool;
+#[cfg(feature = "postgres")]
+async fn db_backend() -> Result<Db, sqlx::Error> {
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+    use std::time::Duration;
 
-    #[cfg(feature = "postgres")]
-    {
-        use sqlx::postgres::PgPoolOptions;
-        use std::time::Duration;
+    let db_str = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/postgres".to_string());
 
-        let db_str = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/postgres".to_string());
+    let options = PgConnectOptions::from_str(&db_str)?.log_statements(log::LevelFilter::Off);
 
-        pool = PgPoolOptions::new()
-            .max_connections(1)
-            .min_connections(0)
-            .idle_timeout(Duration::from_secs(30))
-            .connect(&db_str)
-            .await
-            .unwrap();
-    }
+    Ok(PgPoolOptions::new()
+        .max_connections(1)
+        .min_connections(0)
+        .idle_timeout(Duration::from_secs(30))
+        .connect_with(options)
+        .await?)
+}
 
-    #[cfg(feature = "sqlite")]
-    {
-        use sqlx::sqlite::{
-            SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqliteSynchronous,
-        };
-        use std::str::FromStr;
+#[cfg(feature = "sqlite")]
+async fn db_backend() -> Result<Db, sqlx::Error> {
+    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqliteSynchronous};
 
-        let dir = {
-            let mut path = std::env::current_exe().unwrap();
-            path.pop();
-            path.display().to_string()
-        };
+    let dir = {
+        let mut path = std::env::current_exe()?;
+        path.pop();
+        path.display().to_string()
+    };
 
-        let db_str = std::path::Path::new(format!("sqlite:{dir}").as_str())
-            .join("note.db")
-            .display()
-            .to_string();
+    let db_str = std::path::Path::new(format!("sqlite:{dir}").as_str())
+        .join("note.db")
+        .display()
+        .to_string();
 
-        let options = SqliteConnectOptions::from_str(&db_str)
-            .unwrap()
-            .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Normal)
-            .create_if_missing(true);
+    let options = SqliteConnectOptions::from_str(&db_str)?
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .create_if_missing(true)
+        .log_statements(log::LevelFilter::Off);
 
-        pool = SqlitePool::connect_with(options).await.unwrap();
-    }
+    Ok(SqlitePool::connect_with(options).await?)
+}
+
+fn db() -> Result<&'static Db, sqlx::Error> {
+    DB.get()
+        .ok_or(sqlx::Error::Configuration(sqlx::error::BoxDynError::from(
+            "DB not initialized".to_string(),
+        )))
+}
+
+async fn db_init() -> Result<(), sqlx::Error> {
+    let db = db_backend().await?;
 
     const SCHEMA: &str = r#"
         CREATE TABLE IF NOT EXISTS notes (
@@ -386,29 +357,20 @@ async fn init_pool() -> DbPool {
         );
         "#;
 
-    sqlx::query(SCHEMA).execute(&pool).await.unwrap();
+    sqlx::query(SCHEMA).execute(&db).await?;
 
-    pool
+    DB.set(db)
+        .map_err(|e| sqlx::Error::Configuration(sqlx::error::BoxDynError::from(e)))?;
+    Ok(())
 }
 
-pub async fn pool() -> &'static DbPool {
-    POOL.get_or_init(init_pool).await
+fn log_init() {
+    simple_log::quick!();
 }
 
-pub fn router() -> Router {
-    Router::new()
-        .route("/", get(redirect).post(random_data))
-        .route("/{id}", get(home).post(update_data).put(update_data))
-        .route("/d/{id}", get(raw))
-        .route("/assets/{file}", get(assets))
-        .route("/favicon.ico", get(favicon))
-        .fallback(fallback)
-        .layer(DefaultBodyLimit::max(1 << 20)) // 1 MB
-        .layer(CorsLayer::permissive())
+pub async fn driver() -> Result<(), Box<dyn std::error::Error>> {
+    db_init().await?;
+    log_init();
+
+    Ok(())
 }
-
-#[cfg(feature = "serverless")]
-pub mod vercel;
-
-#[cfg(feature = "server")]
-pub mod server;

@@ -23,9 +23,11 @@ tower-http = { version = "0.6", features = ["cors"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tempfile = "3"
 encoding_rs = "0.8"
+log = "0.4"
+simple-log = "2.4"
 
 [features]
-default = ["serverless"]
+default = ["server"]
 
 serverless = ["vercel_runtime", "postgres"]
 server = ["sqlite"]
