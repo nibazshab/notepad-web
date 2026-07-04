@@ -2,45 +2,20 @@
 
 本质上这只是一个练手项目，用来学习用的
 
-### 1. vercel serverless 版本
+- api
 
-api
+.|.
+-|-
+/xx | get/post/put
+/ | post
+/d/xx | get
 
-- `/xx` - get/post/put
-- `/` - post
-- `/d/xx` - get
+- 环境变量
 
-env
-
-- `DATABASE_URL` - 数据库连接字符串
-- `BASE_URL` - 网站 URL
-
-### 2. pc server 版本
-
-在 serverless 的基础记事本功能外，额外包含了文件柜功能
-
-api
-
-- `/file/` - get/post
-- `/file/xx` - get/delete
-
-env
-
-- `PORT` - 监听端口号
-- `BASE_URL` - 网站 URL
-
-systemd
-
-```ini
-[Unit]
-Description=lavender service
-[Service]
-Environment=PORT=10003 BASE_URL=https://www.example.com
-ExecStart=/usr/local/lavender/lavender
-Restart=on-failure
-[Install]
-WantedBy=multi-user.target
-```
+.|.
+-|-
+DATABASE_URL | 数据库连接字符串
+BASE_URL | 网站 URL
 
 ## 编译
 
@@ -48,19 +23,10 @@ WantedBy=multi-user.target
 cargo check
 cargo fmt --all -- --check
 cargo clippy -- -D warnings
+
+cargo build --verbose --release
 ```
 
-```sh
-cargo build --verbose --release --no-default-features --features server
-```
-
-## 其他
-
-### 1. 大饼
-
-- [x] 远程数据库 PostgreSQL
-- [x] Vercel 部署
-
-### 2. 参考
+## 参考
 
 - pereorga/minimalist-web-notepad
