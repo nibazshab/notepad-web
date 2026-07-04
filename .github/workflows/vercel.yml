@@ -14,20 +14,20 @@ jobs:
           toolchain: stable
           override: true
 
-      - uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-
-
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: latest
+          cache: true
+
+      - run: |
+          pnpm config set global-bin-dir /usr/local/bin
+          pnpm add -g vercel
 
       - env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           pnpm add -g vercel
-          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-          vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          vercel deploy --prod --token=$VERCEL_TOKEN
