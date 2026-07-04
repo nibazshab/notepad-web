@@ -17,7 +17,7 @@
 DATABASE_URL | 数据库连接字符串
 BASE_URL | 网站 URL
 
-## 编译
+- 编译
 
 ```sh
 cargo check
