@@ -12,10 +12,10 @@ jobs:
 
       - run: npm install -g vercel
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+      # - uses: actions-rust-lang/setup-rust-toolchain@v1
+      #   with:
+      #     toolchain: stable
+      #     override: true
 
       - env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
