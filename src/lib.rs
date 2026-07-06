@@ -8,11 +8,20 @@ use axum_extra::{TypedHeader, headers};
 use rand::distr::Alphanumeric;
 use rand::{RngExt, rng};
 use rust_embed::RustEmbed;
-use sqlx::ConnectOptions;
 use std::borrow::Cow;
-use std::str::FromStr;
-use tokio::sync::OnceCell;
 use tower_http::cors::CorsLayer;
+
+#[cfg(feature = "serverless")]
+pub mod serverless;
+
+#[cfg(feature = "serverless")]
+use serverless::db;
+
+#[cfg(feature = "server")]
+pub mod server;
+
+#[cfg(feature = "server")]
+use server::db;
 
 enum Error {
     BadRequest(String),
@@ -90,7 +99,7 @@ where
 {
     let bytes = Bytes::from_request(req, state)
         .await
-        .map_err(|_| Error::BadRequest("Failed to read body".into()))?;
+        .map_err(|_| Error::BadRequest("failed to read body".into()))?;
 
     let (text, _, malformed) = encoding_rs::UTF_8.decode(&bytes);
     if !malformed {
@@ -136,11 +145,11 @@ where
 }
 
 #[derive(RustEmbed)]
-#[folder = "templates/note/assets/"]
+#[folder = "templates/assets/"]
 struct Assets;
 
 #[derive(Debug, Template)]
-#[template(path = "note/index.html")]
+#[template(path = "index.html")]
 struct Note {
     id: String,
     content: String,
@@ -150,7 +159,7 @@ async fn redirect() -> impl IntoResponse {
     Redirect::temporary(&rand_string(4))
 }
 
-async fn home(
+async fn reader(
     Path(id): Path<String>,
     TypedHeader(user_agent): TypedHeader<headers::UserAgent>,
 ) -> Result<impl IntoResponse, Error> {
@@ -180,7 +189,7 @@ async fn raw(Path(id): Path<String>) -> Result<impl IntoResponse, Error> {
     ))
 }
 
-async fn update_data(
+async fn writer(
     Path(id): Path<String>,
     Content(content): Content,
 ) -> Result<impl IntoResponse, Error> {
@@ -236,7 +245,7 @@ async fn fallback(uri: Uri) -> impl IntoResponse {
 
 impl Note {
     async fn write(&self) -> Result<(), Error> {
-        let db = db()?;
+        let db = db().await?;
 
         const QUERY: &str = r#"
             INSERT INTO notes (id, content) VALUES ($1, $2) ON CONFLICT(id) DO
@@ -253,7 +262,7 @@ impl Note {
     }
 
     async fn read(id: &str) -> Result<Self, Error> {
-        let db = db()?;
+        let db = db().await?;
 
         const QUERY: &str = "SELECT content FROM notes WHERE id = $1";
 
@@ -273,7 +282,7 @@ impl Note {
 pub fn router() -> Router {
     Router::new()
         .route("/", get(redirect))
-        .route("/{id}", get(home).post(update_data).put(update_data))
+        .route("/{id}", get(reader).post(writer).put(writer))
         .route("/d/{id}", get(raw))
         .route("/assets/{file}", get(assets))
         .route("/favicon.ico", get(favicon))
@@ -290,65 +299,10 @@ fn rand_string(n: usize) -> String {
         .collect()
 }
 
-#[cfg(feature = "postgres")]
-use sqlx::PgPool as Db;
+async fn init() -> Result<(), Box<dyn std::error::Error>> {
+    simple_log::quick!();
 
-#[cfg(feature = "sqlite")]
-use sqlx::SqlitePool as Db;
-
-static DB: OnceCell<Db> = OnceCell::const_new();
-
-#[cfg(feature = "postgres")]
-async fn db_backend() -> Result<Db, sqlx::Error> {
-    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-    use std::time::Duration;
-
-    let db_str = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/postgres".to_string());
-
-    let options = PgConnectOptions::from_str(&db_str)?.log_statements(log::LevelFilter::Off);
-
-    Ok(PgPoolOptions::new()
-        .max_connections(1)
-        .min_connections(0)
-        .idle_timeout(Duration::from_secs(30))
-        .connect_with(options)
-        .await?)
-}
-
-#[cfg(feature = "sqlite")]
-async fn db_backend() -> Result<Db, sqlx::Error> {
-    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqliteSynchronous};
-
-    let dir = {
-        let mut path = std::env::current_exe()?;
-        path.pop();
-        path.display().to_string()
-    };
-
-    let db_str = std::path::Path::new(format!("sqlite:{dir}").as_str())
-        .join("note.db")
-        .display()
-        .to_string();
-
-    let options = SqliteConnectOptions::from_str(&db_str)?
-        .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal)
-        .create_if_missing(true)
-        .log_statements(log::LevelFilter::Off);
-
-    Ok(SqlitePool::connect_with(options).await?)
-}
-
-fn db() -> Result<&'static Db, sqlx::Error> {
-    DB.get()
-        .ok_or(sqlx::Error::Configuration(sqlx::error::BoxDynError::from(
-            "DB not initialized".to_string(),
-        )))
-}
-
-async fn db_init() -> Result<(), sqlx::Error> {
-    let db = db_backend().await?;
+    let db = db().await?;
 
     const SCHEMA: &str = r#"
         CREATE TABLE IF NOT EXISTS notes (
@@ -357,20 +311,6 @@ async fn db_init() -> Result<(), sqlx::Error> {
         );
         "#;
 
-    sqlx::query(SCHEMA).execute(&db).await?;
-
-    DB.set(db)
-        .map_err(|e| sqlx::Error::Configuration(sqlx::error::BoxDynError::from(e)))?;
-    Ok(())
-}
-
-fn log_init() {
-    simple_log::quick!();
-}
-
-pub async fn driver() -> Result<(), Box<dyn std::error::Error>> {
-    db_init().await?;
-    log_init();
-
+    sqlx::query(SCHEMA).execute(db).await?;
     Ok(())
 }

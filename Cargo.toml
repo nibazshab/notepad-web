@@ -8,7 +8,6 @@ vercel_runtime = { version = "2", features = ["axum"], optional = true }
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["multipart"] }
 tower = { version = "0.5" }
-serde = { version = "1.0" }
 rust-embed = "8"
 askama = "0.15"
 rand = "0.10"
@@ -20,20 +19,14 @@ sqlx = { version = "0.8", features = [
     "sqlite",
 ] }
 tower-http = { version = "0.6", features = ["cors"] }
-tokio-util = { version = "0.7", features = ["io"] }
-tempfile = "3"
 encoding_rs = "0.8"
 log = "0.4"
 simple-log = "2.4"
 
 [features]
-default = ["server"]
-
-serverless = ["vercel_runtime", "postgres"]
-server = ["sqlite"]
-
-postgres = []
-sqlite = []
+default = ["serverless"]
+serverless = ["vercel_runtime"]
+server = []
 
 [[bin]]
 name = "api"

@@ -24,7 +24,7 @@ cargo check
 cargo fmt --all -- --check
 cargo clippy -- -D warnings
 
-cargo build --verbose --release
+cargo run --no-default-features --features server
 ```
 
 ## 参考
