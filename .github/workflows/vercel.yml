@@ -9,25 +9,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - run: npm install -g vercel
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           override: true
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: latest
-          cache: true
-
-      - run: |
-          pnpm config set global-bin-dir /usr/local/bin
-          pnpm add -g vercel
 
       - env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          pnpm add -g vercel
           vercel pull --yes --environment=production --token=$VERCEL_TOKEN
           vercel deploy --prod --token=$VERCEL_TOKEN
