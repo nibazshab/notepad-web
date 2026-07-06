@@ -1,3 +1,17 @@
+#[cfg(feature = "serverless")]
+pub mod serverless;
+
+#[cfg(feature = "server")]
+pub mod server;
+
+#[cfg(feature = "serverless")]
+use serverless::db;
+
+#[cfg(feature = "server")]
+use server::db;
+
+mod extra;
+
 use askama::Template;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, FromRequest, Multipart, Path, Request};
@@ -10,18 +24,6 @@ use rand::{RngExt, rng};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 use tower_http::cors::CorsLayer;
-
-#[cfg(feature = "serverless")]
-pub mod serverless;
-
-#[cfg(feature = "serverless")]
-use serverless::db;
-
-#[cfg(feature = "server")]
-pub mod server;
-
-#[cfg(feature = "server")]
-use server::db;
 
 enum Error {
     BadRequest(String),
@@ -286,6 +288,7 @@ fn router() -> Router {
         .route("/d/{id}", get(raw))
         .route("/assets/{file}", get(assets))
         .route("/favicon.ico", get(favicon))
+        .merge(extra::extra_router())
         .fallback(fallback)
         .layer(DefaultBodyLimit::max(3 << 20)) // 3 MB
         .layer(CorsLayer::permissive())
@@ -312,5 +315,8 @@ async fn init() -> Result<(), Box<dyn std::error::Error>> {
         "#;
 
     sqlx::query(SCHEMA).execute(db).await?;
+
+    extra::extra_init().await?;
+
     Ok(())
 }
