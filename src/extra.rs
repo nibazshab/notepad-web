@@ -12,6 +12,7 @@ use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
 use axum_extra::{TypedHeader, headers};
+use std::time;
 
 async fn extra_8h() -> Result<(), Box<dyn std::error::Error>> {
     let db = db().await?;
@@ -33,8 +34,8 @@ async fn reader_8h(
 ) -> Result<impl IntoResponse, Error> {
     let db = db().await?;
 
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let ts = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
         - 28800;
@@ -70,8 +71,8 @@ async fn reader_8h(
 async fn writer_8h(Content(content): Content) -> Result<impl IntoResponse, Error> {
     let db = db().await?;
 
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let ts = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
 
