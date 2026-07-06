@@ -279,7 +279,7 @@ impl Note {
     }
 }
 
-pub fn router() -> Router {
+fn router() -> Router {
     Router::new()
         .route("/", get(redirect))
         .route("/{id}", get(reader).post(writer).put(writer))
