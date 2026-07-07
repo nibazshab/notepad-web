@@ -92,7 +92,7 @@ static ATTACHMENT_PATH: LazyLock<path::PathBuf> = LazyLock::new(|| {
 });
 
 #[derive(RustEmbed)]
-#[folder = "templates/file_cabinets/"]
+#[folder = "templates/file/"]
 struct FileAssets;
 
 #[derive(Debug)]

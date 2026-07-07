@@ -1,15 +1,5 @@
-#[cfg(feature = "serverless")]
-pub mod serverless;
-
-#[cfg(feature = "server")]
-pub mod server;
-
-#[cfg(feature = "serverless")]
-use serverless::db;
-
-#[cfg(feature = "server")]
-use server::db;
-
+pub mod app;
+mod database;
 mod extra;
 
 use askama::Template;
@@ -24,6 +14,8 @@ use rand::{RngExt, rng};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 use tower_http::cors::CorsLayer;
+
+use crate::database::db;
 
 enum Error {
     BadRequest(String),

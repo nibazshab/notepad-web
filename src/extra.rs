@@ -1,11 +1,3 @@
-#[cfg(feature = "serverless")]
-use crate::serverless::db;
-
-#[cfg(feature = "server")]
-use crate::server::db;
-
-use crate::{Content, Error, Note, assets};
-
 use askama::Template;
 use axum::Router;
 use axum::http::{StatusCode, header};
@@ -13,6 +5,9 @@ use axum::response::{Html, IntoResponse};
 use axum::routing::get;
 use axum_extra::{TypedHeader, headers};
 use std::time;
+
+use crate::database::db;
+use crate::{Content, Error, Note, assets};
 
 async fn extra_8h() -> Result<(), Box<dyn std::error::Error>> {
     let db = db().await?;

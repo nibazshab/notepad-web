@@ -1,8 +1,4 @@
-#[cfg(feature = "serverless")]
-use app::serverless::app;
-
-#[cfg(feature = "server")]
-use app::server::app;
+use app::app::app;
 
 #[cfg(feature = "serverless")]
 fn main() -> Result<(), vercel_runtime::Error> {
