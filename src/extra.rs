@@ -35,9 +35,9 @@ async fn reader_8h(
         .as_secs() as i64
         - 28800;
 
-    const QUERY: &str = "SELECT content FROM extra_8h WHERE id = '28800' AND ts >= $1";
+    const SS: &str = "SELECT content FROM extra_8h WHERE id = '28800' AND ts >= $1";
 
-    let content: String = sqlx::query_scalar(QUERY)
+    let content: String = sqlx::query_scalar(SS)
         .bind(ts)
         .fetch_optional(db)
         .await?
@@ -71,17 +71,13 @@ async fn writer_8h(Content(content): Content) -> Result<impl IntoResponse, Error
         .unwrap_or_default()
         .as_secs() as i64;
 
-    const QUERY: &str = r#"
+    const SS: &str = r#"
             INSERT INTO extra_8h (id, content, ts) VALUES ('28800', $1, $2)
             ON CONFLICT(id) DO UPDATE
             SET content = excluded.content, ts = excluded.ts
             "#;
 
-    sqlx::query(QUERY)
-        .bind(&content)
-        .bind(ts)
-        .execute(db)
-        .await?;
+    sqlx::query(SS).bind(&content).bind(ts).execute(db).await?;
 
     Ok(StatusCode::OK)
 }
@@ -92,6 +88,6 @@ pub async fn extra_init() -> Result<(), Box<dyn std::error::Error>> {
 
 pub fn extra_router() -> Router {
     Router::new()
-        .route("/ex/8h", get(reader_8h).post(writer_8h))
-        .route("/ex/assets/{file}", get(assets))
+        .route("/ex/8h/", get(reader_8h).post(writer_8h))
+        .route("/ex/8h/assets/{file}", get(assets))
 }

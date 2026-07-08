@@ -208,9 +208,12 @@ async fn assets(Path(file): Path<String>) -> impl IntoResponse {
                 Cow::Owned(vec) => Bytes::from(vec),
             };
 
+            const AGE: i64 = 60 * 60 * 24 * 30 * 6;
+            let cache = format!("public, max-age={AGE}");
+
             let headers = [
                 (header::CONTENT_TYPE, content_type),
-                (header::CACHE_CONTROL, "public, max-age=15552000"), // 60 * 60 * 24 * 30 * 6, 6 months
+                (header::CACHE_CONTROL, cache.as_str()),
             ];
 
             (headers, bytes).into_response()
@@ -221,13 +224,17 @@ async fn assets(Path(file): Path<String>) -> impl IntoResponse {
 }
 
 async fn favicon() -> impl IntoResponse {
+    const AGE: i64 = 60 * 60 * 24 * 30 * 12;
+    let cache = format!("public, max-age={AGE}");
+
     (
         [
             (header::CONTENT_TYPE, "image/x-icon"),
-            (header::CACHE_CONTROL, "public, max-age=31104000"), // 60 * 60 * 24 * 30 * 12, 1 year
+            (header::CACHE_CONTROL, cache.as_str()),
         ],
         vec![],
     )
+        .into_response()
 }
 
 async fn fallback(uri: Uri) -> impl IntoResponse {
@@ -241,12 +248,12 @@ impl Note {
     async fn write(&self) -> Result<(), Error> {
         let db = db().await?;
 
-        const QUERY: &str = r#"
+        const SS: &str = r#"
             INSERT INTO notes (id, content) VALUES ($1, $2) ON CONFLICT(id) DO
             UPDATE SET content = excluded.content
             "#;
 
-        sqlx::query(QUERY)
+        sqlx::query(SS)
             .bind(&self.id)
             .bind(&self.content)
             .execute(db)
@@ -258,9 +265,9 @@ impl Note {
     async fn read(id: &str) -> Result<Self, Error> {
         let db = db().await?;
 
-        const QUERY: &str = "SELECT content FROM notes WHERE id = $1";
+        const SS: &str = "SELECT content FROM notes WHERE id = $1";
 
-        let content = sqlx::query_scalar(QUERY)
+        let content = sqlx::query_scalar(SS)
             .bind(id)
             .fetch_optional(db)
             .await?
@@ -282,7 +289,7 @@ fn router() -> Router {
         .route("/favicon.ico", get(favicon))
         .merge(extra::extra_router())
         .fallback(fallback)
-        .layer(DefaultBodyLimit::max(3 << 20)) // 3 MB
+        .layer(DefaultBodyLimit::max(3 << 20))
         .layer(CorsLayer::permissive())
 }
 

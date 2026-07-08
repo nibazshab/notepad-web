@@ -7,7 +7,6 @@
 .|.
 -|-
 /xx | get/post/put
-/ | post
 /d/xx | get
 
 - 环境变量
@@ -15,7 +14,6 @@
 .|.
 -|-
 DATABASE_URL | 数据库连接字符串
-BASE_URL | 网站 URL
 
 - 编译
 
