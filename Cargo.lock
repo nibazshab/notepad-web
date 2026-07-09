@@ -34,12 +34,15 @@ name = "app"
 version = "1.0.0"
 dependencies = [
  "askama",
+ "askama_escape",
  "axum",
  "axum-extra",
  "encoding_rs",
+ "hex",
  "log",
  "rand 0.10.0",
  "rust-embed",
+ "serde",
  "simple-log",
  "sqlx",
  "tokio",
@@ -86,6 +89,12 @@ dependencies = [
  "serde_derive",
  "syn",
 ]
+
+[[package]]
+name = "askama_escape"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e86a22a67898006b0dadb4af8336c996d1ceaea72da6cfafd61443115ee1d94"
 
 [[package]]
 name = "askama_macros"
