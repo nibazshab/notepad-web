@@ -136,7 +136,7 @@ mod extra_message_board {
 
         let ss = "SELECT message FROM extra_message_board ORDER BY id DESC LIMIT $1 OFFSET $2";
 
-        let rows: Vec<Vec<u8>> = sqlx::query_scalar(ss)
+        let rows: Vec<String> = sqlx::query_scalar(ss)
             .bind(record)
             .bind(offset)
             .fetch_all(db)
