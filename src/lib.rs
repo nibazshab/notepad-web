@@ -15,7 +15,7 @@ use rust_embed::RustEmbed;
 use std::borrow::Cow;
 use tower_http::cors::CorsLayer;
 
-use crate::database::db;
+use crate::database::lib::db;
 
 enum Error {
     BadRequest(String),

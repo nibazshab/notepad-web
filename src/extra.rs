@@ -6,7 +6,7 @@ use axum::routing::get;
 use axum_extra::{TypedHeader, headers};
 use std::time;
 
-use crate::database::db;
+use crate::database::lib::db;
 use crate::{Content, Error, Note, assets};
 
 async fn extra_8h() -> Result<(), Box<dyn std::error::Error>> {
