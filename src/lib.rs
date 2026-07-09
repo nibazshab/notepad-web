@@ -169,8 +169,8 @@ async fn reader(
         )
             .into_response())
     } else {
-        let html = note.render()?;
-        Ok(Html(html).into_response())
+        let txt = note.render()?;
+        Ok(Html(txt).into_response())
     }
 }
 
