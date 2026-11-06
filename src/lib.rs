@@ -13,7 +13,6 @@ use const_format::concatcp;
 use rand::distr::Alphanumeric;
 use rand::{RngExt, rng};
 use rust_embed::RustEmbed;
-use tower_http::cors::CorsLayer;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -127,8 +126,8 @@ const MAX_AGE: i64 = 60 * 60 * 24 * 30 * 6;
 const CACHE_CONTROL: &str = concatcp!("public, max-age=", MAX_AGE);
 
 #[derive(Clone)]
-struct Context<R: Database> {
-    repo: R,
+struct Ctx<R: Database> {
+    db: R,
 }
 
 trait Database: Send + Sync {
@@ -137,11 +136,12 @@ trait Database: Send + Sync {
 }
 
 async fn redirect() -> Redirect {
-    Redirect::temporary(rng().sample_iter(&Alphanumeric).take(4).map(char::from).collect())
+    let id: String = rng().sample_iter(&Alphanumeric).take(4).map(char::from).collect();
+    Redirect::temporary(&id)
 }
 
 async fn reader(
-    State(ctx): State<Context<impl Database>>,
+    State(ctx): State<Ctx<impl Database>>,
     Path(id): Path<String>,
     TypedHeader(user_agent): TypedHeader<headers::UserAgent>,
 ) -> Result<impl IntoResponse> {
@@ -151,25 +151,22 @@ async fn reader(
         return content(State(ctx), Path(id)).await.map(|r| r.into_response());
     }
 
-    let content = ctx.repo.read(&id).await?;
-    let tpl = TemplateIndex { id, content }.render()?;
-    Ok(Html(tpl).into_response())
+    let content = ctx.db.read(&id).await?;
+    let tpi = TemplateIndex { id, content }.render()?;
+    Ok(Html(tpi).into_response())
 }
 
-async fn content(
-    State(ctx): State<Context<impl Database>>,
-    Path(id): Path<String>,
-) -> Result<impl IntoResponse> {
-    let content = ctx.repo.read(&id).await?;
+async fn content(State(ctx): State<Ctx<impl Database>>, Path(id): Path<String>) -> Result<impl IntoResponse> {
+    let content = ctx.db.read(&id).await?;
     Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], content))
 }
 
 async fn writer(
-    State(ctx): State<Context<impl Database>>,
+    State(ctx): State<Ctx<impl Database>>,
     Path(id): Path<String>,
     Content(content): Content,
 ) -> Result<impl IntoResponse> {
-    ctx.repo.write(&id, &content).await?;
+    ctx.db.write(&id, &content).await?;
     Ok(StatusCode::OK)
 }
 
@@ -206,23 +203,20 @@ async fn favicon() -> Response {
 }
 
 pub async fn router() -> Router {
-    let storage = Context {
-        repo: upstash::Upstash,
-    };
+    let ctx = Ctx { db: upstash::Upstash };
 
     let edp = Router::new()
         .route("/", get(redirect))
         .route("/{id}", get(reader).post(writer).put(writer))
         .route("/d/{id}", get(content))
-        .with_state(storage);
+        .with_state(ctx);
 
-    let res = Router::new()
+    let fop = Router::new()
         .route("/assets/{file}", get(assets_file))
         .route("/favicon.ico", get(favicon));
 
     Router::new()
         .merge(edp)
-        .merge(res)
+        .merge(fop)
         .layer(DefaultBodyLimit::max(3 << 20))
-        .layer(CorsLayer::permissive())
 }
