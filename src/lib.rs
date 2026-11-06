@@ -44,7 +44,7 @@ impl IntoResponse for Error {
             Error::Bytes(rejection) => rejection.into_response(),
             Error::MultipartRejection(rejection) => rejection.into_response(),
             Error::Multipart(rejection) => rejection.into_response(),
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response(),
+            _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
 }
@@ -68,7 +68,7 @@ impl Content {
             return Ok(Self(text.into_owned()));
         }
 
-        Err(Error::BadRequest("not utf-8/gbk".into()))
+        Err(Error::BadRequest("need utf-8/gbk".into()))
     }
 
     async fn from_multipart<S>(req: Request, state: &S) -> Result<Self>

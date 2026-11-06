@@ -33,16 +33,14 @@ enum Rest {
 }
 
 impl Rest {
-    fn one(self) -> Result<Req> {
+    fn reply(self) -> Result<Req> {
         let reply = match self {
             Rest::Single(reply) => reply,
-            Rest::Batch(mut replies) => replies
-                .pop()
-                .ok_or_else(|| err("Upstash returned no command reply"))?,
+            Rest::Batch(mut replies) => replies.pop().ok_or_else(|| into_err("Upstash Redis error"))?,
         };
 
         if let Some(e) = reply.error.as_deref() {
-            return Err(err(e));
+            return Err(into_err(e));
         }
 
         Ok(reply)
@@ -51,8 +49,8 @@ impl Rest {
 
 async fn conn() -> Result<&'static Conn> {
     CONN.get_or_try_init(|| async {
-        let url = std::env::var("KV_REST_API_URL").map_err(err)?;
-        let token = std::env::var("KV_REST_API_TOKEN").map_err(err)?;
+        let url = std::env::var("KV_REST_API_URL").map_err(into_err)?;
+        let token = std::env::var("KV_REST_API_TOKEN").map_err(into_err)?;
 
         Ok(Conn {
             client: Client::new(),
@@ -71,18 +69,14 @@ async fn call(c: &Conn, cmd: &[&str]) -> Result<Req> {
         .json(cmd)
         .send()
         .await
-        .map_err(err)?
+        .map_err(into_err)?
         .error_for_status()
-        .map_err(err)?
+        .map_err(into_err)?
         .json()
         .await
-        .map_err(err)?;
+        .map_err(into_err)?;
 
-    rest.one()
-}
-
-fn err(message: impl Display) -> Error {
-    Error::Database(message.to_string())
+    rest.reply()
 }
 
 impl Database for Upstash {
@@ -97,4 +91,8 @@ impl Database for Upstash {
         call(c, &["SET", id, content]).await?;
         Ok(())
     }
+}
+
+fn into_err(err: impl Display) -> Error {
+    Error::Database(err.to_string())
 }
