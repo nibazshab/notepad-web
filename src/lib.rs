@@ -1,4 +1,4 @@
-mod database;
+mod upstash;
 
 use askama::Template;
 use axum::body::Bytes;
@@ -35,21 +35,17 @@ enum Error {
     Template(#[from] askama::Error),
 
     #[error("{0}")]
-    Sqlx(#[from] sqlx::Error),
+    Database(String),
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
             Error::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
-
             Error::Bytes(rejection) => rejection.into_response(),
             Error::MultipartRejection(rejection) => rejection.into_response(),
             Error::Multipart(rejection) => rejection.into_response(),
-
-            _err @ (Error::Template(_) | Error::Sqlx(_)) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
-            }
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response(),
         }
     }
 }
@@ -116,22 +112,22 @@ where
     }
 }
 
-#[derive(RustEmbed)]
-#[folder = "templates/assets/"]
-struct Assets;
-
-const MAX_AGE: i64 = 60 * 60 * 24 * 30 * 6;
-const CACHE_CONTROL: &str = concatcp!("public, max-age=", MAX_AGE);
-
 #[derive(Debug, Template)]
 #[template(path = "index.html")]
-struct Webpage {
+struct TemplateIndex {
     id: String,
     content: String,
 }
 
+#[derive(RustEmbed)]
+#[folder = "templates/assets/"]
+struct EmbedAssets;
+
+const MAX_AGE: i64 = 60 * 60 * 24 * 30 * 6;
+const CACHE_CONTROL: &str = concatcp!("public, max-age=", MAX_AGE);
+
 #[derive(Clone)]
-struct Storage<R: Database> {
+struct Context<R: Database> {
     repo: R,
 }
 
@@ -141,44 +137,44 @@ trait Database: Send + Sync {
 }
 
 async fn redirect() -> Redirect {
-    Redirect::temporary(&rand_string(4))
+    Redirect::temporary(rng().sample_iter(&Alphanumeric).take(4).map(char::from).collect())
 }
 
 async fn reader(
-    State(storage): State<Storage<impl Database>>,
+    State(ctx): State<Context<impl Database>>,
     Path(id): Path<String>,
     TypedHeader(user_agent): TypedHeader<headers::UserAgent>,
 ) -> Result<impl IntoResponse> {
     let ua = user_agent.as_str().to_lowercase();
     let is_cli = ua.contains("curl") || ua.contains("wget");
     if is_cli {
-        return content(State(storage), Path(id)).await.map(|r| r.into_response());
+        return content(State(ctx), Path(id)).await.map(|r| r.into_response());
     }
 
-    let content = storage.repo.read(&id).await?;
-    let text = Webpage { id, content }.render()?;
-    Ok(Html(text).into_response())
+    let content = ctx.repo.read(&id).await?;
+    let tpl = TemplateIndex { id, content }.render()?;
+    Ok(Html(tpl).into_response())
 }
 
 async fn content(
-    State(storage): State<Storage<impl Database>>,
+    State(ctx): State<Context<impl Database>>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse> {
-    let content = storage.repo.read(&id).await?;
+    let content = ctx.repo.read(&id).await?;
     Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], content))
 }
 
 async fn writer(
-    State(storage): State<Storage<impl Database>>,
+    State(ctx): State<Context<impl Database>>,
     Path(id): Path<String>,
     Content(content): Content,
 ) -> Result<impl IntoResponse> {
-    storage.repo.write(&id, &content).await?;
+    ctx.repo.write(&id, &content).await?;
     Ok(StatusCode::OK)
 }
 
-async fn resources(Path(file): Path<String>) -> Response {
-    let Some(obj) = Assets::get(&file) else {
+async fn assets_file(Path(file): Path<String>) -> Response {
+    let Some(obj) = EmbedAssets::get(&file) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
@@ -209,13 +205,9 @@ async fn favicon() -> Response {
         .into_response()
 }
 
-fn rand_string(n: usize) -> String {
-    rng().sample_iter(&Alphanumeric).take(n).map(char::from).collect()
-}
-
 pub async fn router() -> Router {
-    let storage = Storage {
-        repo: database::Postgres,
+    let storage = Context {
+        repo: upstash::Upstash,
     };
 
     let edp = Router::new()
@@ -225,7 +217,7 @@ pub async fn router() -> Router {
         .with_state(storage);
 
     let res = Router::new()
-        .route("/assets/{file}", get(resources))
+        .route("/assets/{file}", get(assets_file))
         .route("/favicon.ico", get(favicon));
 
     Router::new()
