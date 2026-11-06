@@ -20,6 +20,7 @@ struct Conn {
 struct Req {
     #[serde(default)]
     result: Option<String>,
+
     #[serde(default)]
     error: Option<String>,
 }
