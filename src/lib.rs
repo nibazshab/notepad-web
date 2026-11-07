@@ -1,17 +1,21 @@
 mod upstash;
 
 use askama::Template;
-use axum::body::Bytes;
-use axum::extract::multipart::{MultipartError, MultipartRejection};
-use axum::extract::rejection::BytesRejection;
-use axum::extract::{DefaultBodyLimit, FromRequest, Multipart, Path, Request, State};
-use axum::http::{StatusCode, header};
-use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    body::Bytes,
+    extract::{
+        DefaultBodyLimit, FromRequest, Multipart, Path, Request, State,
+        multipart::{MultipartError, MultipartRejection},
+        rejection::BytesRejection,
+    },
+    http::{StatusCode, header},
+    response::{Html, IntoResponse, Redirect, Response},
+    routing::get,
+};
 use axum_extra::{TypedHeader, headers};
 use const_format::concatcp;
-use rand::distr::Alphanumeric;
-use rand::{RngExt, rng};
+use rand::{RngExt, distr::Alphanumeric, rng};
 use rust_embed::RustEmbed;
 
 type Result<T> = std::result::Result<T, Error>;
