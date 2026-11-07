@@ -1,6 +1,6 @@
 #[tokio::main]
 async fn main() -> Result<(), vercel_runtime::Error> {
-    let router = app::router().await;
+    let router = app::router();
 
     let app = tower::ServiceBuilder::new()
         .layer(vercel_runtime::axum::VercelLayer::new())

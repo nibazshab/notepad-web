@@ -206,8 +206,10 @@ async fn favicon() -> Response {
         .into_response()
 }
 
-pub async fn router() -> Router {
-    let ctx = Ctx { db: upstash::Upstash };
+pub fn router() -> Router {
+    let ctx = Ctx {
+        db: upstash::Upstash::conn(),
+    };
 
     let edp = Router::new()
         .route("/", get(redirect))
