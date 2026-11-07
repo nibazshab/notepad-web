@@ -17,7 +17,7 @@ struct Conn {
 }
 
 #[derive(Debug, Deserialize)]
-struct Req {
+struct Reply {
     #[serde(default)]
     result: Option<String>,
 
@@ -28,12 +28,12 @@ struct Req {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Rest {
-    Batch(Vec<Req>),
-    Single(Req),
+    Batch(Vec<Reply>),
+    Single(Reply),
 }
 
 impl Rest {
-    fn reply(self) -> Result<Req> {
+    fn reply(self) -> Result<Reply> {
         let reply = match self {
             Rest::Single(reply) => reply,
             Rest::Batch(mut replies) => replies.pop().ok_or_else(|| into_err("Upstash Redis error"))?,
@@ -61,7 +61,7 @@ async fn conn() -> Result<&'static Conn> {
     .await
 }
 
-async fn call(c: &Conn, cmd: &[&str]) -> Result<Req> {
+async fn call(c: &Conn, cmd: &[&str]) -> Result<Reply> {
     let rest: Rest = c
         .client
         .post(&c.url)
