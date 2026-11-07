@@ -15,6 +15,7 @@ impl Upstash {
     pub fn conn() -> Self {
         let url = std::env::var("KV_REST_API_URL").expect("缺少 KV_REST_API_URL");
         let token = std::env::var("KV_REST_API_TOKEN").expect("缺少 KV_REST_API_TOKEN");
+
         assert!(!url.is_empty(), "KV_REST_API_URL 不能为空");
         assert!(!token.is_empty(), "KV_REST_API_TOKEN 不能为空");
 
