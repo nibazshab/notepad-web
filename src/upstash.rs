@@ -11,6 +11,15 @@ pub struct Upstash {
     token: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct Reply {
+    #[serde(default)]
+    result: Option<String>,
+
+    #[serde(default)]
+    error: Option<String>,
+}
+
 impl Upstash {
     pub fn conn() -> Self {
         let url = std::env::var("KV_REST_API_URL").expect("缺少 KV_REST_API_URL");
@@ -27,7 +36,7 @@ impl Upstash {
     }
 
     async fn call(&self, cmd: &[&str]) -> Result<Reply> {
-        let rest: Rest = self
+        let reply: Reply = self
             .client
             .post(&self.url)
             .bearer_auth(&self.token)
@@ -40,33 +49,6 @@ impl Upstash {
             .json()
             .await
             .map_err(into_err)?;
-
-        rest.reply()
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct Reply {
-    #[serde(default)]
-    result: Option<String>,
-
-    #[serde(default)]
-    error: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Rest {
-    Batch(Vec<Reply>),
-    Single(Reply),
-}
-
-impl Rest {
-    fn reply(self) -> Result<Reply> {
-        let reply = match self {
-            Rest::Single(reply) => reply,
-            Rest::Batch(mut replies) => replies.pop().ok_or_else(|| into_err("Upstash Redis error"))?,
-        };
 
         if let Some(e) = reply.error.as_deref() {
             return Err(into_err(e));
